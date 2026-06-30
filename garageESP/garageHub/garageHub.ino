@@ -3,9 +3,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h> // Make sure you have the ArduinoJson library installed!
 
-// --- CONFIGURATION ---
-const char* ssid = "BSchance";
-const char* password = "goldiegem66";
+#include "secrets.h" // Contains your Wi-Fi credentials
 
 // Your exact brand new Render cloud URL
 const char* serverName = "https://garden-data.onrender.com/api/data";
