@@ -43,18 +43,22 @@ async def receive_data(request: Request):
     temp_f = round((temp_c * 9/5) + 32, 2)
     
     humidity = float(data.get("humidity", 0.0))
-    pressure = float(data.get("pressure", 0.0))
+    
+    # --- PRESSURE CONVERSION HERE ---
+    pressure_hpa = float(data.get("pressure", 0.0))
+    pressure_inhg = round(pressure_hpa * 0.02953, 2) # Convert hPa to inHg
+    
     rssi = int(data.get("rssi", 0))
     
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO sensor_data (moisture, temperature, humidity, pressure, rssi) VALUES (?, ?, ?, ?, ?)",
-            (moisture_pct, temp_f, humidity, pressure, rssi)
+            (moisture_pct, temp_f, humidity, pressure_inhg, rssi)
         )
         conn.commit()
         
-    print(f"Logged: Temp {temp_f}°F, Moisture {moisture_pct}%, Pressure {pressure}hPa, RSSI {rssi}")
+    print(f"Logged: Temp {temp_f}°F, Moisture {moisture_pct}%, Pressure {pressure_inhg}inHg, RSSI {rssi}")
     return {"status": "success"}
 
 @app.get("/api/latest")
@@ -200,7 +204,7 @@ async def serve_dashboard():
                     </div>
                     <div class="card">
                         <h3>Atmospheric Pressure</h3>
-                        <div class="value" id="pressure">-- hPa</div>
+                        <div class="value" id="pressure">-- inHg</div>
                     </div>
                 </div>
 
@@ -236,7 +240,7 @@ async def serve_dashboard():
                     
                     pressureChart = new Chart(ctxPressure, {
                         type: 'line',
-                        data: { labels: [], datasets: [{ label: 'Avg Pressure (hPa)', borderColor: '#bb86fc', backgroundColor: 'rgba(187, 134, 252, 0.1)', fill: true, data: [], tension: 0.4 }] },
+                        data: { labels: [], datasets: [{ label: 'Avg Pressure (inHg)', borderColor: '#bb86fc', backgroundColor: 'rgba(187, 134, 252, 0.1)', fill: true, data: [], tension: 0.4 }] },
                         options: { responsive: true, plugins: { title: { display: true, text: 'Pressure Trend', color: '#fff' } } }
                     });
                 }
@@ -252,7 +256,7 @@ async def serve_dashboard():
                             document.getElementById('moisture').innerText = data.moisture + '%';
                             document.getElementById('temp').innerText = data.temperature.toFixed(1);
                             document.getElementById('humidity').innerText = data.humidity.toFixed(1) + '%';
-                            document.getElementById('pressure').innerText = data.pressure.toFixed(1) + ' hPa';
+                            document.getElementById('pressure').innerText = data.pressure.toFixed(2) + ' inHg';
                             document.getElementById('rssi').innerText = data.rssi + ' dBm';
                             
                             const bar = document.getElementById('moisture-bar');
