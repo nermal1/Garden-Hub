@@ -54,7 +54,7 @@ async def receive_data(request: Request):
         )
         conn.commit()
         
-    print(f"Logged: Temp {temp_f}°F, Moisture {moisture_pct}%, RSSI {rssi}")
+    print(f"Logged: Temp {temp_f}°F, Moisture {moisture_pct}%, Pressure {pressure}hPa, RSSI {rssi}")
     return {"status": "success"}
 
 @app.get("/api/latest")
@@ -78,28 +78,32 @@ async def get_history(timeframe: str = 'daily'):
         if timeframe == 'past_hour':
             query = """
                 SELECT strftime('%H:%M', timestamp) as time_label,
-                       AVG(moisture) as moisture, AVG(temperature) as temperature, AVG(humidity) as humidity
+                       AVG(moisture) as moisture, AVG(temperature) as temperature, 
+                       AVG(humidity) as humidity, AVG(pressure) as pressure
                 FROM sensor_data WHERE timestamp >= datetime('now', '-1 hour')
                 GROUP BY time_label ORDER BY time_label ASC
             """
         elif timeframe == 'hourly':
             query = """
                 SELECT strftime('%m-%d %H:00', timestamp) as time_label,
-                       AVG(moisture) as moisture, AVG(temperature) as temperature, AVG(humidity) as humidity
+                       AVG(moisture) as moisture, AVG(temperature) as temperature, 
+                       AVG(humidity) as humidity, AVG(pressure) as pressure
                 FROM sensor_data WHERE timestamp >= datetime('now', '-1 day')
                 GROUP BY time_label ORDER BY time_label ASC
             """
         elif timeframe == 'weekly':
             query = """
                 SELECT strftime('%Y-%W', timestamp) as time_label,
-                       AVG(moisture) as moisture, AVG(temperature) as temperature, AVG(humidity) as humidity
+                       AVG(moisture) as moisture, AVG(temperature) as temperature, 
+                       AVG(humidity) as humidity, AVG(pressure) as pressure
                 FROM sensor_data WHERE timestamp >= datetime('now', '-28 days')
                 GROUP BY time_label ORDER BY time_label ASC
             """
         else: 
             query = """
                 SELECT strftime('%Y-%m-%d', timestamp) as time_label,
-                       AVG(moisture) as moisture, AVG(temperature) as temperature, AVG(humidity) as humidity
+                       AVG(moisture) as moisture, AVG(temperature) as temperature, 
+                       AVG(humidity) as humidity, AVG(pressure) as pressure
                 FROM sensor_data WHERE timestamp >= datetime('now', '-7 days')
                 GROUP BY time_label ORDER BY time_label ASC
             """
@@ -110,7 +114,8 @@ async def get_history(timeframe: str = 'daily'):
     return {"labels": [r["time_label"] for r in rows], 
             "moisture": [r["moisture"] for r in rows], 
             "temperature": [r["temperature"] for r in rows],
-            "humidity": [r["humidity"] for r in rows]}
+            "humidity": [r["humidity"] for r in rows],
+            "pressure": [r["pressure"] for r in rows]}
 
 # --- Dashboard HTML ---
 @app.get("/", response_class=HTMLResponse)
@@ -131,7 +136,7 @@ async def serve_dashboard():
                 /* Layout Grids */
                 .health-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 20px; }
                 .live-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-                .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 20px; }
+                .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
                 
                 /* Cards */
                 .card { background-color: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
@@ -193,23 +198,29 @@ async def serve_dashboard():
                         <h3>Garden Humidity</h3>
                         <div class="value" id="humidity">--%</div>
                     </div>
+                    <div class="card">
+                        <h3>Atmospheric Pressure</h3>
+                        <div class="value" id="pressure">-- hPa</div>
+                    </div>
                 </div>
 
                 <div class="charts">
                     <div class="chart-container"><canvas id="moistureChart"></canvas></div>
                     <div class="chart-container"><canvas id="tempChart"></canvas></div>
+                    <div class="chart-container"><canvas id="pressureChart"></canvas></div>
                 </div>
             </div>
 
             <script>
                 Chart.defaults.color = '#888';
                 Chart.defaults.borderColor = '#333';
-                let moistureChart, tempChart;
+                let moistureChart, tempChart, pressureChart;
                 let lastDataTime = Date.now();
 
                 function initCharts() {
                     const ctxMoisture = document.getElementById('moistureChart').getContext('2d');
                     const ctxTemp = document.getElementById('tempChart').getContext('2d');
+                    const ctxPressure = document.getElementById('pressureChart').getContext('2d');
 
                     moistureChart = new Chart(ctxMoisture, {
                         type: 'line',
@@ -222,6 +233,12 @@ async def serve_dashboard():
                         data: { labels: [], datasets: [{ label: 'Avg Temperature (°F)', borderColor: '#cf6679', backgroundColor: 'rgba(207, 102, 121, 0.1)', fill: true, data: [], tension: 0.4 }] },
                         options: { responsive: true, plugins: { title: { display: true, text: 'Temperature Trend', color: '#fff' } } }
                     });
+                    
+                    pressureChart = new Chart(ctxPressure, {
+                        type: 'line',
+                        data: { labels: [], datasets: [{ label: 'Avg Pressure (hPa)', borderColor: '#bb86fc', backgroundColor: 'rgba(187, 134, 252, 0.1)', fill: true, data: [], tension: 0.4 }] },
+                        options: { responsive: true, plugins: { title: { display: true, text: 'Pressure Trend', color: '#fff' } } }
+                    });
                 }
 
                 async function fetchLive() {
@@ -230,11 +247,12 @@ async def serve_dashboard():
                         const data = await res.json();
                         
                         if(data.moisture !== undefined && data.timestamp) {
-                            lastDataTime = Date.now(); // Reset the offline timer
+                            lastDataTime = Date.now(); 
                             
                             document.getElementById('moisture').innerText = data.moisture + '%';
                             document.getElementById('temp').innerText = data.temperature.toFixed(1);
                             document.getElementById('humidity').innerText = data.humidity.toFixed(1) + '%';
+                            document.getElementById('pressure').innerText = data.pressure.toFixed(1) + ' hPa';
                             document.getElementById('rssi').innerText = data.rssi + ' dBm';
                             
                             const bar = document.getElementById('moisture-bar');
@@ -269,15 +287,17 @@ async def serve_dashboard():
                     tempChart.data.labels = data.labels;
                     tempChart.data.datasets[0].data = data.temperature;
                     tempChart.update();
+                    
+                    pressureChart.data.labels = data.labels;
+                    pressureChart.data.datasets[0].data = data.pressure;
+                    pressureChart.update();
                 }
 
-                // Update the "Time Since Last Update" clock every second
                 setInterval(() => {
                     const secondsAgo = Math.floor((Date.now() - lastDataTime) / 1000);
                     const timeEl = document.getElementById('time-since');
                     timeEl.innerText = `Online (Updated ${secondsAgo}s ago)`;
                     
-                    // Turn red if we haven't heard from the ESP32 in over 15 seconds
                     if (secondsAgo > 15) {
                         timeEl.style.color = '#cf6679';
                         timeEl.innerText = `OFFLINE (Last seen ${secondsAgo}s ago)`;
@@ -292,7 +312,7 @@ async def serve_dashboard():
                 
                 setInterval(fetchLive, 2000); 
                 setInterval(updateCharts, 15000); 
-                setInterval(fetchForecast, 300000); // Check weather every 5 minutes
+                setInterval(fetchForecast, 300000); 
             </script>
         </body>
     </html>
